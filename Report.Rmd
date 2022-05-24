@@ -1,0 +1,240 @@
+---
+title: "DATA 621 Final"
+author: "Brad Harbans"
+date: "5/22/2022"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    includes:
+        in_header: ./fig-valign.tex
+font-family: "DejaVu Sans"
+mainfont: "DejaVu Sans"
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(tidyverse)
+library(kableExtra)
+library(flextable)
+library(summarytools)
+library(caret)
+library(psych)
+library(mgcv)
+library(msme)
+library(countreg)
+library(cowplot)
+library(itsadug)
+```
+
+## Abstract
+
+The NYC Department of Transportation (NYC DOT) collects a daily total of bike counts conducted monthly on the Brooklyn Bridge, Manhattan Bridge, Williamsburg Bridge, and Queensboro Bridge [@dot_2022]. The data is used by the city for transportation planning. The dataset also contains the temperature and precipitation for the days. One would expect that days with extreme temperatures or that have precipitation should have lesser bicycle usage. It is the purpose of this paper to attempt to predict bicycle utilization using a variety of linear models. For this paper I will use a subset of data that is available on Kaggle [@york_2017].
+
+Key words: Regression, Poisson , predicting count values, general additive models
+
+## Introduction
+
+In this paper I will attempt to predict the number of bicycle crossing across the east river bridges. As we are analyzing count data, a poisson distribution will be used. We can also use the presence of precipitation as a target for a binomial regression model. As a comparison I will also be using a generalized additive model for predicition.
+
+## Literature review
+
+With rising urban populations cars create more traffic, pollution, noise, and green house emissions. Encouraging cycling has the ability to mitigate some of these factors. Encouraging cycling has a number of benefits for a city and its inhabitants. For the typical cyclist a check of the weather is the first thing that is done before leaving the house, if it is raining or too hot it is unlikely that the individual will choose to cycle[@deneef_bean_rojas_2021]. A 2021 study aimed to answer this question by analyzing data from "forty Public Bicycle Sharing Programs located in forty cities (16 countries) across five different
+climate zones, spanning tropical to boreal climates" [@BEAN2021103155]. 
+
+Key findings form the study included ": (a) the most significant
+variable, particularly on weekdays, is the time of day, followed by precipitation; (b) in most
+cities, usage increases on weekdays and weekends up to a point around 27 to 28◦ C, before
+declining; (c) usage by hour usually follows a bimodal or trimodal daily pattern on weekdays,
+except for schemes which are too small to serve a commuter function (weekend and weekday
+usage is similar in small schemes); (d) weekend usage peaks at around 2 to 3 pm in most
+schemes, except those in hotter climates where the peak is around 5 pm; (e) precipitation
+negatively affects female ridership more than male ridership; and, (f) a changing climate is
+likely to affect cycling by boosting ridership in cold climates and lowering ridership in warm
+climates, but the effects will likely be small" [@BEAN2021103155]. 
+
+In particular the anaylis of data from NY revealed that higher temperatures predict more cycling trips whereas rainy, humid, windy and especially snowy weather led to fewer cycling trips [@BEAN2021103155]. Other interesting information that was revealed by the data is that "you’d think that people in the tropics would be particularly sensitive to cold weather, and that people in colder climates would be more willing to ride when it’s cold ... acclimatization doesn’t affect rider numbers as much as we might have thought."[@deneef_bean_rojas_2021]. Also the fact that the study used several cities as a comparison, it allowed the researchers to deduce that "safe cycling infrastructure is enough to encourage people to ride even if the weather is bad"[@deneef_bean_rojas_2021].There is even a discussion on how climate change will effect riding patterns. 
+
+The study utilized the generalized additive model:
+\[ usage(h) = s(u_h) + p_h + s(h) + s(j_h) + \epsilon \]
+Where: 
+
+\( usage(h)\) = number of trips within half an hour of hour 
+
+\(u_h\) = UTCI temperature at hour h 
+
+\(p_h\) = total precipitation in the previous hour 
+
+\(j_h\) = Julian date 
+
+\(\epsilon\) = Error term 
+
+
+Generalized addtitive models (GAM) is a technique which links the preditors to the target using a smoothing functions rather than a coefficient. This the method proves to be useful in uncovering nonlinear covariate effects [@hastiey_tibshirani1990]. Since this was the method used in the Bean model, I will be applying this to the data from the NYC DOT. 
+
+## Methodology
+
+The sample dataset consits of 210 observations, running from the month of April 2016 with 9 predictors. The sample size is rather small, and the aim would be to build a modeling technique that can be adapted to use data from the NY DOT and another source for weather. 
+
+
+## Experimentation and Results
+
+```{r warning=FALSE}
+bikes = read.csv ("./nyc-east-river-bicycle-counts.csv")
+```
+
+I will begin by displaying some summary staistics :
+
+```{r}
+summary(bikes)
+```
+
+
+Before displaying summary statistics, I will create a few auxiliary variables. For one, I will introduce a mean temperature, remove the index and Day columns ( as this is identical to date). I will also coerce the precipitation column to a numeric, this introduces NAs (which I will drop), as it includes two repeated rows.
+
+```{r warning=FALSE}
+bikes = bikes %>% 
+  mutate(meanTemp =(`Low.Temp...F.` + `High.Temp...F.` )/2,
+         Day = strftime(Date, '%A'),
+         Precipitation = as.numeric(Precipitation)
+         ) %>% 
+  mutate( Day = factor(Day,
+                       levels=c("Monday","Tuesday","Wednesday",
+                                "Thursday","Friday","Saturday",
+                                "Sunday"))) %>% 
+  drop_na() 
+
+```
+
+Let us look ar some summary statistics. 
+```{r results="asis", warning=FALSE}
+dfSummary( bikes , 
+           plain.ascii = FALSE, 
+           style = "grid", 
+           tmp.img.dir = "/tmp",
+           valid.col    = FALSE,
+           varnumbers   = FALSE,
+           headings = FALSE
+           )
+#https://github.com/dcomtois/summarytools/issues/72 
+```
+
+As expected, higher temperatures seem to correlate to a higher number of cyclists. Additionally, precipitation seems to be negatively correlated with the number of cyclists. We can also see that there are more cyclist on Wednesday and Thursdays.  
+```{r}
+ggplot(bikes, 
+       aes(x = meanTemp, y = Total)) + 
+        geom_point() +
+        geom_smooth(method = "glm", method.args = list(family = "poisson")) +
+        ggtitle("Mean Temperature vs. Total Number of Cyclists")
+        
+```
+
+```{r}
+ggplot(bikes, 
+       aes(x = Precipitation, y = Total)) + 
+        geom_point() +
+        geom_smooth(method = "glm", method.args = list(family = "poisson")) +
+        ggtitle("Precipitation vs. Total Number of Cyclists")
+        
+```
+
+```{r}
+ggplot(data=bikes , aes(x=Day,y=Total, fill=Day) ) +
+  geom_bar(stat='identity') +
+  ggtitle("Day of Week vs Total Number of Cyclists")
+
+```
+
+
+### Prediction using GLM(Poisson)
+
+```{r}
+set.seed(123948)
+
+inTraining = createDataPartition(bikes$Total, p = .75, list = FALSE)
+training = bikes[ inTraining,]
+testing  = bikes[-inTraining,]
+```
+I have already split my data into a test and training data set. I will now create a model using the precipitation, mean temperature, and the day of week as predictors. 
+
+```{r}
+model1 = glm(Total ~ Precipitation + meanTemp + Day,
+             fam = poisson(link = log),
+             data = training,
+             ) 
+summary(model1)
+```
+### Prediction using GAM
+
+```{r}
+model2 = gam(Total ~ s(Precipitation,k=8) + s(meanTemp) +  Day ,
+             data=training,
+             family = "poisson"
+             )
+summary(model2)
+```
+
+Lets perform a check on our model using the `gam.check()` function. The model converges, however, the small p value for the second smooth indicates that residuals are not randomly distributed. This often means there are not enough basis functions.
+```{r}
+gam.check(model2)
+```
+The smooths seem to accurately model the data, we should be careful over overfitting though.
+```{r}
+plot(model2,all.terms=TRUE)
+```
+
+```{r}
+anova(model2)$s.table
+```
+
+
+### Model Comparison
+Note that usint the  `anova()` function to compare these models shows that the gam model has a more parsimonious fit of the data. The low p-value indicates that the second model is statistically significantly better at capturing the data than the linear model. 
+
+```{r}
+anova(model1,model2,test = "Chisq")
+```
+
+I will also look at the root mean square errors for the models. Note that the RMSE is lower for the GAM model and pearsons \( \chi ^2\), dispersion statistic, and AIC is lower. 
+```{r}
+model1.pred = predict(model1,testing)
+model2.pred = predict(model2,testing)
+rmse.model1 = RMSE(model1.pred, testing$Total)
+rmse.model2 = RMSE(model2.pred, testing$Total)
+pdisp.model1 = P__disp(model1)
+pdisp.model2 = P__disp(model2)
+
+model_eval_stats = rbind( append(pdisp.model1,list(RMSE = rmse.model1,
+                                                   AIC=AIC(model1))),
+                          append(pdisp.model2,list(RMSE = rmse.model2, 
+                                                   AIC=AIC(model2)))) %>% 
+  as.data.frame(c("GLM", "GAM"))
+  
+model_eval_stats %>% 
+  kbl()
+
+```
+
+"The rootogram is a graphical tool associated with the work of J. W. Tukey that was originally used for assessing goodness of fit of univariate distributions. Here we extend the rootogram to regression models and show that this is particularly useful for diagnosing and treating issues such as overdispersion and/or excess zeros in count data models". [Kleiber_2016]. If a bar doesn’t reach the zero line then the model over predicts a particular count bin, and if the bar exceeds the zero line it under predicts.[@simpson_2016]. 
+
+In our case, our models both under predicts the counts, however, the GAM does a better job at fitting the data. 
+
+```{r warning=FALSE}
+root.model1 = rootogram(model1, style = "hanging", plot = FALSE)
+root.model2 = rootogram(model2, style = "hanging", plot = FALSE)
+
+ylims <- ylim(-2.5, .25)
+plot_grid(autoplot(root.model1)+ylims, 
+          autoplot(root.model2) +ylims, 
+          ncol = 2, labels = c("GLM","GAM") )
+```
+
+## Discussion and Conclusions
+
+
+My sample size is limited and has been confined to the Month of April. In order to get a better understanding of how the weather and day of week explains the number of cyclist, one should get a larger dataset from the NYC Dot and combine that with weather data. It would be interesting to see how the total number of cyclists change over winter months or how the changing weather patterns effect the number of cyclist.
+
+The general additive model provided the best fit of the data. Nonetheless, there is no single coefficient that we can make inferences from. As a result we will need to look at the other model to deduce the effects of the variables. In this case, it would appear that precipitation has a highest influence on the number of cyclists, which makes intuitive sense. What is surprising is that the day of the week in general tends to be a stronger predictor than the temperature. 
+
+
+## References
